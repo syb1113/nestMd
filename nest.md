@@ -775,3 +775,40 @@ export class AppModule implements OnApplicationBootstrap {
 
 }
 ```
+
+### Nest如何实现事件通信
+
+安装相应的包`npm i --save @nestjs/event-emitter`,然后在App.module.ts中引入 `imports: [EventEmitterModule.forRoot()]`
+
+```ts
+EventEmitterModule.forRoot({
+  wildcard: true, // 启用通配符
+  delimiter: '.',// namespace 和事件名的分隔符，默认为点号，可根据需要修改
+})
+```
+
+比如在aaa.service.ts中发送事件
+
+```ts
+findAll() {
+    this.eventEmitter.emit('aaa.find',{
+      data: 'xxxx'
+    })
+
+    this.eventEmitter.emit('aaa.find2',{
+      data: 'xxxx2'
+    })
+    return `This action returns all aaa`;
+}
+```
+
+然后在bbb.service.ts中监听事件
+
+```ts
+//使用通配符可以调用所有的 aaa. 事件
+@OnEvent('aaa.*')
+  handleAaaFindEvent(payload) {
+    console.log('aaa.find 被调用', payload);
+    this.create(new CreateBbbDto());
+  }
+```
