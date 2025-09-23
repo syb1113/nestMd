@@ -692,3 +692,86 @@ findAll() { }
   @Transform(({value}) => '邮箱是：' + value)
   email: string;
 ```
+
+swagger的@ApiResponse() 也完全可以用entity代替vo，想要排除的字段加一下@ApiHideProperty()就好了
+
+### Nest中的定时任务以及删除定时任务
+
+#### 三种定时任务
+
+安装定时任务包
+>npm install --save @nestjs/schedule
+
+在App.module.ts中引入 `imports: [ScheduleModule.forRoot()]`,创建一个service `nest g service task --flat --no-spec` 通过 @Cron 声明任务执行时间
+
+使用@Cron来执行定时任务
+
+```ts
+import { Injectable } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+
+@Injectable()
+export class TaskService {
+
+  //Nest提供了CronExpression枚举类型，其中包含了一些常用的定时时间
+  @Cron(CronExpression.EVERY_5_SECONDS)
+  handleCron() {
+    //在这里做定时任务
+    console.log('task execute');
+  }
+}
+```
+
+还可以使用@Interval 来执行定时任务,以及使用@Timeout 来执行定时任务
+
+```ts
+//500ms执行一次
+@Interval('task2', 500)
+task2() {
+    console.log('task2');
+}
+
+//3000ms后执行一次
+@Timeout('task3', 3000)
+task3() {
+    console.log('task3');
+}
+
+```
+
+#### 清楚定时任务
+
+可以在 AppModule 里注入 SchedulerRegistry，然后在 onApplicationBootstrap 的声明周期里拿到所有的 cronJobs
+
+```ts
+export class AppModule implements OnApplicationBootstrap {
+  @Inject()
+  private schedulerRegistry: SchedulerRegistry;
+
+  onApplicationBootstrap() {
+    //清除Cron定时任务
+    const crons = this.schedulerRegistry.getCronJobs();
+    crons.forEach((item, key) => {
+      item.stop();
+      this.schedulerRegistry.deleteCronJob(key);
+    });
+
+    //清除Interval定时任务
+    const intervals = this.schedulerRegistry.getIntervals();
+    intervals.forEach(item => {
+      const interval = this.schedulerRegistry.getInterval(item);
+      clearInterval(interval);
+      this.schedulerRegistry.deleteInterval(item);
+    })
+
+    //清除Timeout定时任务
+    const timeouts = this.schedulerRegistry.getTimeouts();
+    timeouts.forEach(item => {
+      const timeout = this.schedulerRegistry.getTimeout(item);
+      clearTimeout(timeout);
+      this.schedulerRegistry.deleteTimeout(item);
+    })
+  }
+
+}
+```
