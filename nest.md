@@ -812,3 +812,129 @@ findAll() {
     this.create(new CreateBbbDto());
   }
 ```
+
+### 短链接服务
+
+通过短链接来访问长链接，通过访问短链接通过302重定向，长链接通过Base64或者是Base62来进行编码
+>npm install base62
+
+使用base62进行编码string
+
+```ts
+import  base62 from "base62";
+
+export function generateRandomStr(len: number) {
+    let str = '';
+    for(let i = 0; i < len; i++) {
+        const num = Math.floor(Math.random() * 62);
+        str += base62.encode(num);
+    }
+    return str;
+}
+
+```
+
+在UniqueCodeService添加下插入压缩码的方法：
+
+```ts
+import { Injectable } from '@nestjs/common';
+import { InjectEntityManager } from '@nestjs/typeorm';
+import { EntityManager } from 'typeorm';
+import { generateRandomStr } from './utils';
+import { UniqueCode } from './entities/UniqueCode';
+
+@Injectable()
+export class UniqueCodeService {
+
+    @InjectEntityManager()
+    private entityManager: EntityManager;
+ 
+    async generateCode() {
+        let str = generateRandomStr(6);
+
+        const uniqueCode = await this.entityManager.findOneBy(UniqueCode, {
+            code: str
+        });
+
+        if(!uniqueCode) {
+            const code = new UniqueCode();
+            code.code = str;
+            code.status = 0;
+
+            return await this.entityManager.insert(UniqueCode, code);
+        } else {
+            return this.generateCode();
+        }
+    }
+}
+```
+
+创建相应的短链表结构，增加一个生成锻炼的服务
+
+```ts
+import { UniqueCodeService } from './unique-code.service';
+import { Inject, Injectable } from '@nestjs/common';
+import { InjectEntityManager } from '@nestjs/typeorm';
+import { EntityManager } from 'typeorm';
+import { ShortLongMap } from './entities/ShortLongMap';
+import { UniqueCode } from './entities/UniqueCode';
+
+@Injectable()
+export class ShortLongMapService {
+
+    @InjectEntityManager()
+    private entityManager: EntityManager;
+
+    @Inject(UniqueCodeService)
+    private uniqueCodeService: UniqueCodeService;
+
+    async generate(longUrl: string) {
+        let uniqueCode = await this.entityManager.findOneBy(UniqueCode, {
+            status: 0
+        })
+
+        if(!uniqueCode) {
+            uniqueCode = await this.uniqueCodeService.generateCode();
+        }
+        const map = new ShortLongMap();
+        map.shortUrl = uniqueCode.code;
+        map.longUrl = longUrl;
+  
+        await this.entityManager.insert(ShortLongMap, map);
+        await this.entityManager.update(UniqueCode, {
+            id: uniqueCode.id
+        }, {
+            status: 1
+        });
+        return uniqueCode.code;
+    }
+
+}
+
+```
+
+添加将长链转化为短链接的端口
+
+```ts
+@Get('short-url')
+  async generateShortUrl(@Query('url') longUrl) {
+    return this.shortLongMapService.generate(longUrl);
+  }
+```
+
+再添加一个通过短链302重定向到长链的端口
+
+```ts
+@Get(':code')
+@Redirect()
+async jump(@Param('code') code) {
+    const longUrl = await this.shortLongMapService.getLongUrl(code);
+    if(!longUrl) {
+      throw new BadRequestException('短链不存在');
+    }
+    return {
+      url: longUrl,
+      statusCode: 302
+    }  
+}
+```
