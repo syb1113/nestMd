@@ -938,3 +938,35 @@ async jump(@Param('code') code) {
     }  
 }
 ```
+
+### 使用sharp来实现对gif的压缩
+
+>npm install --save sharp
+
+```ts
+@Get('compression')
+  async compression(
+    @Query('path') filePath: string,
+    @Query('color', ParseIntPipe) color: number,
+    @Res() res: Response,
+  ) {
+    console.log(filePath, color);
+
+    if (!existsSync(filePath)) {
+      throw new BadRequestException('文件不存在');
+    }
+
+    const data = await sharp(filePath, {
+      animated: true,//设为 true 是读取所有的帧，不然默认只会读取 gif 的第一帧
+      limitInputPixels: false,//设为 false 是不限制大小，默认太大的图片是会报错的。
+    })
+      .gif({
+        colours: color,//是颜色的数量，默认是 256
+      })
+      .toBuffer();
+
+    res.set('Content-Disposition', `attachment; filename="dest.gif"`);
+
+    res.send(data);
+  }
+```
