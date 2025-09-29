@@ -970,3 +970,18 @@ async jump(@Param('code') code) {
     res.send(data);
   }
 ```
+
+### 大文件实现流式下载
+
+使用 Nest 封装的一个类 StreamableFile
+
+```ts
+@Get('download3')
+download3() {
+    const stream = fs.createReadStream('package.json');
+
+    return new StreamableFile(stream, {
+      disposition: `attachment; filename="guang.json"`
+    });
+}
+```
