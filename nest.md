@@ -985,3 +985,116 @@ download3() {
     });
 }
 ```
+
+### 实现扫二维码登录
+
+安装相应的包
+>npm install qrcode @types/qrcode
+
+添加一个获取二维码的接口
+
+```ts
+import { randomUUID } from 'crypto';
+import * as qrcode from 'qrcode';
+
+@Get('qrcode/generate')
+  async generate() {
+    const uuid = randomUUID();
+    const dataUrl = await qrcode.toDataURL(
+      `这里是实际的url地址?id=${uuid}`,
+    );
+    //这里设置二维码的状态
+    map.set(`qrcode_${uuid}`, {
+      status: 'noscan',
+    });
+    return {
+      qrcode_id: uuid,
+      data_url: dataUrl,
+    };
+  }
+```
+
+前端会调取这个接口来获取二维码地址，渲染到页面上
+
+二维码有不同的状态，比如未扫描，已扫描，已过期,给二维码接口添加一个状态字段，记录二维码的状态，在获取二维码的时候，设置二维码的初始状态
+
+```ts
+//example
+interface QrCodeInfo {
+  status:
+    | 'noscan'
+    | 'scan-wait-confirm'
+    | 'scan-confirm'
+    | 'scan-cancel'
+    | 'expired';
+  userInfo?: {
+    userId: number;
+  };
+}
+// noscan 未扫描
+// scan-wait-confirm -已扫描，等待用户确认
+// scan-confirm 已扫描，用户同意授权
+// scan-cancel 已扫描，用户取消授权
+// expired 已过期
+//使用map来记录二维码的状态
+const map = new Map<string, QrCodeInfo>();
+```
+
+加一个 qrcode/check 接口，用来查询二维码状态,以及实现 /qrcode/confirm、/qrcode/cancel、/qrcode/scan 这三个接口
+
+```ts
+@Get('qrcode/check')
+  check(@Query('id') id: string) {
+    const info = map.get(`qrcode_${id}`);
+    if (info && info.status === 'scan-confirm') {
+      return {
+        token: '获取用户token',
+        ...info,
+      };
+    }
+    return info;
+  }
+
+//扫码后打开的登录页调用这个
+  @Get('qrcode/scan')
+  scan(@Query('id') id: string) {
+    const info = map.get(`qrcode_${id}`);
+    if (!info) {
+      throw new BadRequestException('二维码已过期');
+    }
+    info.status = 'scan-wait-confirm';
+    return 'success';
+  }
+  //扫码后用户确认调用
+  @Get('qrcode/confirm')
+  confirm(@Query('id') id: string, @Headers('Authorization') auth: string) {
+    let user;
+    try{
+      const [, token] = auth.split(' ');
+      const info = await this.jwtService.verify(token);
+
+      user = this.users.find(item => item.id == info.userId);
+    } catch(e) {
+      throw new UnauthorizedException('token 过期，请重新登录');
+    }
+
+    const info = map.get(`qrcode_${id}`);
+    if(!info) {
+      throw new BadRequestException('二维码已过期');
+    }
+    info.status = 'scan-confirm';
+    info.userInfo = user;
+    return 'success';
+  }
+  //扫码后用户取消调用
+  @Get('qrcode/cancel')
+  cancel(@Query('id') id: string) {
+    const info = map.get(`qrcode_${id}`);
+    if (!info) {
+      throw new BadRequestException('二维码已过期');
+    }
+    info.status = 'scan-cancel';
+    return 'success';
+  }
+
+```
